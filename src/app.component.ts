@@ -1,20 +1,23 @@
-
-import { Component, ChangeDetectionStrategy, signal, computed, effect, inject } from '@angular/core';
+import { Component, ChangeDetectionStrategy, signal, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HolidayService } from './services/holiday.service';
 import { DateCalculatorService } from './services/date-calculator.service';
 import { CountryConfig } from './models/country-data.model';
+import { CalculationResult, ExcludedDay } from './models/date-calculator.model';
+import { I18nService } from './services/i18n.service';
+import { TranslatePipe } from './pipes/translate.pipe';
 
 @Component({
   selector: 'app-root',
   templateUrl: './app.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, TranslatePipe],
 })
 export class AppComponent {
   private holidayService = inject(HolidayService);
   private dateCalculatorService = inject(DateCalculatorService);
+  i18n = inject(I18nService);
 
   countries = signal<CountryConfig[]>([]);
   
@@ -23,35 +26,42 @@ export class AppComponent {
   startDateString = signal<string>(this.getTodayString());
   workingDays = signal<number>(10);
   
+  // UI State
+  showExcludedDays = signal<boolean>(false);
+  showReminderSuccess = signal<boolean>(false);
+
   // Mock features state
   reminderCredits = signal<number>(0);
-  showReminderSuccess = signal<boolean>(false);
 
   // Computed state
   selectedCountryConfig = computed(() => this.holidayService.getCountryConfig(this.selectedCountryCode()));
   
-  calculationResult = computed(() => {
+  calculationResult = computed<CalculationResult>(() => {
     const config = this.selectedCountryConfig();
     const start = this.startDateString();
     const days = this.workingDays();
     
     if (!config || !start || days < 0) {
-      return { date: null, note: 'Invalid input' };
+      return { resultDate: null, plainDate: null, excludedDays: [] };
     }
     
-    // The input date string 'YYYY-MM-DD' is treated as UTC midnight.
-    // To avoid timezone shifts, we construct the Date object carefully.
     const startDate = new Date(start + 'T00:00:00');
-
-    const resultDate = this.dateCalculatorService.computeResultDate(startDate, days, config);
-    if (!resultDate) return { date: null, note: '' };
-
-    const note = `Calculated from ${start}, excluding weekends and ${config.countryName} public holidays.`;
-    return { date: resultDate, note };
+    return this.dateCalculatorService.computeResultDate(startDate, days, config);
   });
 
-  resultDate = computed(() => this.calculationResult().date);
-  resultNote = computed(() => this.calculationResult().note);
+  resultDate = computed(() => this.calculationResult().resultDate);
+  plainDate = computed(() => this.calculationResult().plainDate);
+  excludedDays = computed(() => this.calculationResult().excludedDays);
+  
+  dayDifference = computed(() => {
+    const res = this.resultDate();
+    const plain = this.plainDate();
+    if (!res || !plain) return 0;
+    
+    const resUTC = Date.UTC(res.getFullYear(), res.getMonth(), res.getDate());
+    const plainUTC = Date.UTC(plain.getFullYear(), plain.getMonth(), plain.getDate());
+    return Math.round((resUTC - plainUTC) / (1000 * 60 * 60 * 24));
+  });
 
   holidaysForDisplay = computed(() => {
     const config = this.selectedCountryConfig();
@@ -94,6 +104,14 @@ export class AppComponent {
       this.showReminderSuccess.set(true);
       setTimeout(() => this.showReminderSuccess.set(false), 3000);
     }
+  }
+
+  toggleExcludedDays() {
+    this.showExcludedDays.update(v => !v);
+  }
+
+  abs(n: number): number {
+    return Math.abs(n);
   }
 
   private getTodayString(): string {
