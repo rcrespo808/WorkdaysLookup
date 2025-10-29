@@ -1,0 +1,5 @@
+{
+  "name": "WorkingDays Calculator",
+  "description": "A tiny web app that calculates a target date by adding a specified number of working days to a start date, excluding weekends and public holidays for a chosen country.",
+  "requestFramePermissions": []
+}
